@@ -1,99 +1,117 @@
-from flask import Blueprint,request,jsonify
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt, get_jwt_identity
 from flask_bcrypt import Bcrypt
+import datetime
 
-#importamos la conexion a la base de datos
 from config.db import get_db_connection
 
-import os 
+import os
 from dotenv import load_dotenv
-load_dotenv()  # Cargar variables de entorno desde el archivo .env
 
-# crear el blueprint
+#Cargamos las variables de entorno
+load_dotenv()
+
+#Creamos el blueprint
 usuarios_bp = Blueprint('usuarios', __name__)
 
-#inicializar Bcrypt
+# Inicializamos a Bcrypt
 bcrypt = Bcrypt()
 
-#Crear un endpoint para registrar usuarios
 @usuarios_bp.route('/registrar', methods=['POST'])
 def registrar():
-    #obtener datos del body
+
+    # Obtener del body los datos
     data = request.get_json()
 
     nombre = data.get('nombre')
     email = data.get('email')
     password = data.get('password')
 
-    #validar que los campos no esten vacios
+    # Validacion
     if not nombre or not email or not password:
-        return jsonify({"error": "Nombre, email y contraseña son requeridos"}), 400
-
+        return jsonify({"error":"Faltan datos"}), 400
     
-    #obtener cursor
+    # Obtener el cursor de la bd
     cursor = get_db_connection()
 
-    
-
-
-    #hacemos el insert
     try:
-        #verificar si el usuario ya existe\
+        # Verificamos que el usuario no exista
         cursor.execute("SELECT * FROM usuarios WHERE email = %s", (email,))
         existing_user = cursor.fetchone()
+
         if existing_user:
-            return jsonify({"error": "El usuario con este email ya existe"}), 400
+            return jsonify({"error":"Ese usuario ya existe"}),400
         
-        #hashear la contraseña
+        # Hacemos hash al password
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
-        #insertar el nuevo usuario
-        cursor.execute("INSERT INTO usuarios (nombre, email, password) VALUES (%s, %s, %s)", 
+        # Insertar el registro del nuevo usuario en la base de datos
+        cursor.execute('''INSERT INTO usuarios (nombre, email, password) values (%s,%s,%s)''',
                        (nombre, email, hashed_password))
-        cursor.connection.commit() #commit para guardar los cambios
-        return jsonify({"mensaje": "Usuario registrado exitosamente"}), 201
-    
+        
+        # Guardamos el nuevo registro
+        cursor.connection.commit()
+
+        return jsonify({"mensaje":"El usuario se creo correctamente"}), 201
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error":f"Error al registrar al usuario: {str(e)}"}),500
+
     finally:
-        #cerrar el cursor
+        # Nos aseguramos de cerrar el cursor
         cursor.close()
 
-#Crear un endpoint para login de usuarios
 @usuarios_bp.route('/login', methods=['POST'])
 def login():
-    #obtener datos del body
+
     data = request.get_json()
 
     email = data.get('email')
     password = data.get('password')
 
-    #validar que los campos no esten vacios
     if not email or not password:
-        return jsonify({"error": "Email y contraseña son requeridos"}), 400
-
-    #obtener cursor
-    cursor = get_db_connection()
+        return jsonify({"error":"Faltan datos"}), 400
     
-#==========================Aqui quedo pendiente=================================
-    # try:
-    #     #verificar si el usuario existe
-    #     cursor.execute("SELECT * FROM usuarios WHERE email = %s", (email,))
-    #     user = cursor.fetchone()
-    #     if not user:
-    #         return jsonify({"error": "Credenciales inválidas"}), 401
-        
-    #     #verificar la contraseña
-    #     stored_password = user[3]  # Asumiendo que la contraseña está en la cuarta columna
-    #     if not bcrypt.check_password_hash(stored_password, password):
-    #         return jsonify({"error": "Credenciales inválidas"}), 401
+    cursor = get_db_connection()
 
-    #     #crear el token JWT
-    #     access_token = create_access_token(identity={"id": user[0], "nombre": user[1], "email": user[2]})
-    #     return jsonify({"access_token": access_token}), 200
+    query = "SELECT password, id_usuario FROM usuarios WHERE email = %s"
+    cursor.execute(query, (email,))
 
-    # except Exception as e:
-    #     return jsonify({"error": str(e)}), 500
-    # finally:
-    #     #cerrar el cursor
-    #     cursor.close()
+    usuario = cursor.fetchone()
+
+    if usuario and bcrypt.check_password_hash(usuario[0], password):
+        #Generamos el JWT
+        expires = datetime.timedelta(minutes=60)
+
+        acces_token = create_access_token(
+            identity=str(usuario[1]),
+            expires_delta=expires
+        )
+        cursor.close()
+        return jsonify({"access_token": acces_token}),200
+    else:
+        return jsonify({"error":"Credenciales Incorrectas"}),401
+
+@usuarios_bp.route('/datos', methods=['GET'])
+@jwt_required()
+def datos():
+
+    current_user = get_jwt_identity()
+
+    cursor = get_db_connection()
+
+    query = "SELECT id_usuario, nombre, email FROM USUARIOS where id_usuario = %s"
+    cursor.execute(query, (current_user,))
+    usuario = cursor.fetchone()
+
+    cursor.close()
+
+    if usuario:
+        user_info = {
+            "id_usuario":usuario[0],
+            "nombre":usuario[1],
+            "email":usuario[2],
+        }
+        return jsonify({"datos":user_info}), 200
+    else:
+        return jsonify({"error":"Usuario no encontrado"}),404
