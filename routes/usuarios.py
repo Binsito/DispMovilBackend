@@ -100,7 +100,7 @@ def datos():
 
     cursor = get_db_connection()
 
-    query = "SELECT id_usuario, nombre, email FROM USUARIOS where id_usuario = %s"
+    query = "SELECT id_usuario, nombre, email FROM usuarios where id_usuario = %s"
     cursor.execute(query, (current_user,))
     usuario = cursor.fetchone()
 
