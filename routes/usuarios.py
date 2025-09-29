@@ -92,6 +92,7 @@ def login():
     else:
         return jsonify({"error":"Credenciales Incorrectas"}),401
 
+
 @usuarios_bp.route('/datos', methods=['GET'])
 @jwt_required()
 def datos():

@@ -5,8 +5,10 @@ from config.db import init_db, mysql
 from flask_jwt_extended import JWTManager
 
 #Importamos las rutas de los blueprint
-from routes.tareas import tareas_bp
+from routes.ejercicios import ejercicios_bp
 from routes.usuarios import usuarios_bp
+from routes.rutinas import rutinas_bp
+from routes.pesos import pesos_bp
 
 #Cargar las variables de entorno
 load_dotenv()
@@ -24,8 +26,10 @@ def create_app():  #Funcion para crear la app
     jwt = JWTManager(app)
 
     #Registrar el blueprint
-    app.register_blueprint(tareas_bp, url_prefix='/tareas')
+    app.register_blueprint(ejercicios_bp, url_prefix='/ejercicios')
     app.register_blueprint(usuarios_bp, url_prefix='/usuarios')
+    app.register_blueprint(rutinas_bp, url_prefix='/rutinas')
+    app.register_blueprint(pesos_bp, url_prefix='/pesos')
 
     return app
 
