@@ -119,10 +119,9 @@ def datos():
         return jsonify({"datos":user_info}), 200
     else:
         return jsonify({"error":"Usuario no encontrado"}),404
-    
 
 
-@usuarios_bp.route('/perfil', methods=['POST'])
+@usuarios_bp.route('/actualizar', methods=['POST'])
 @jwt_required()
 def perfil():
     current_user = get_jwt_identity()
