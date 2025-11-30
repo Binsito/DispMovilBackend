@@ -1,7 +1,10 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify,send_file,make_response
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt, get_jwt_identity
 from flask_bcrypt import Bcrypt
 import datetime
+from werkzeug.utils import secure_filename
+
+import io
 
 from config.db import get_db_connection
 
@@ -116,3 +119,54 @@ def datos():
         return jsonify({"datos":user_info}), 200
     else:
         return jsonify({"error":"Usuario no encontrado"}),404
+    
+
+
+@usuarios_bp.route('/perfil', methods=['POST'])
+@jwt_required()
+def perfil():
+    current_user = get_jwt_identity()
+    if not current_user:
+        return jsonify({"error":"Usuario no autenticado"}),401
+
+    nombre = request.form.get('nombre')
+    foto_perfil = request.files.get('foto_perfil')
+    print(foto_perfil)
+    print(nombre)
+
+    
+    
+    if not foto_perfil or not nombre:
+        return jsonify({"error":"Faltan datos"}),400
+    
+    
+    file_bytes = foto_perfil.read()
+    cursor = get_db_connection()
+    try:
+        query = "UPDATE usuarios SET foto_perfil = %s, nombre = %s WHERE id_usuario = %s"
+        cursor.execute(query, (file_bytes, nombre, current_user))
+        cursor.connection.commit()
+        return jsonify({"mensaje":"Perfil actualizado correctamente"}),200
+    except Exception as e:
+        return jsonify({"error":f"Error al actualizar el perfil: {str(e)}"}),500
+    finally:
+        cursor.close()
+
+
+@usuarios_bp.route('/foto/<int:id_usuario>', methods=['GET'])
+@jwt_required()
+def get_foto(id_usuario):
+    current_user = get_jwt_identity()
+    if not current_user or int(current_user) != id_usuario:
+        return jsonify({"error":"Credenciales Incorrectas"}),401
+    
+    cursor = get_db_connection()
+    cursor.execute("SELECT foto_perfil FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+    row = cursor.fetchone()
+    cursor.close()
+
+    if not row or not row[0]:
+        return "No hay foto", 404
+
+    image_bytes = row[0]  # el BLOB
+    return send_file(io.BytesIO(image_bytes), mimetype='image/jpeg')

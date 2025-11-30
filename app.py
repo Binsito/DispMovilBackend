@@ -10,6 +10,9 @@ from routes.usuarios import usuarios_bp
 from routes.rutinas import rutinas_bp
 from routes.pesos import pesos_bp
 
+from flask_cors import CORS
+
+
 #Cargar las variables de entorno
 load_dotenv()
 
@@ -18,6 +21,7 @@ def create_app():  #Funcion para crear la app
 
     #Instancia de la app
     app = Flask(__name__)
+    CORS(app)
 
     #Configurar la base de datos
     init_db(app)
@@ -30,12 +34,12 @@ def create_app():  #Funcion para crear la app
     app.register_blueprint(usuarios_bp, url_prefix='/usuarios')
     app.register_blueprint(rutinas_bp, url_prefix='/rutinas')
     app.register_blueprint(pesos_bp, url_prefix='/pesos')
-
     return app
 
 
 #Crear la app
 app = create_app()
+
 
 if __name__ == "__main__":
 
