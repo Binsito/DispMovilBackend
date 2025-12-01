@@ -9,20 +9,28 @@ ejercicios_bp = Blueprint('ejercicios', __name__)
 @ejercicios_bp.route('/obtener', methods=['GET'])
 @jwt_required()
 def get():
-
     # Obtenemos la identidad del dueño del token
     current_user = get_jwt_identity()
     
     # Conectamos a la bd
     cursor = get_db_connection()
 
-    # Ejecutar la consulta
+    # Ejecutar la consulta, ahora incluyendo el nombre de la rutina
     query = '''
-               SELECT a.id_usuario,a.nombre , a.descripcion, b.nombre, b.email, a.id_ejercicio, a.id_rutina
-               FROM ejercicios as a 
-               INNER JOIN usuarios as b on a.id_usuario = b.id_usuario
-               WHERE a.id_usuario = %s
-            '''
+        SELECT 
+            e.id_usuario,
+            e.nombre AS nombre_ejercicio,
+            e.descripcion,
+            u.nombre AS nombre_usuario,
+            u.email,
+            e.id_ejercicio,
+            e.id_rutina,
+            r.nombre AS nombre_rutina
+        FROM ejercicios AS e
+        INNER JOIN usuarios AS u ON e.id_usuario = u.id_usuario
+        LEFT JOIN rutinas AS r ON e.id_rutina = r.id_rutina
+        WHERE e.id_usuario = %s
+    '''
     
     cursor.execute(query, (current_user,))
     lista = cursor.fetchall()
@@ -30,9 +38,10 @@ def get():
     cursor.close()
 
     if not lista:
-        return jsonify({"error":"El usuario no tiene ejercicios"}),404
+        return jsonify({"error":"El usuario no tiene ejercicios"}), 404
     else:
-        return jsonify({"lista":lista}),200
+        return jsonify({"lista": lista}), 200
+
 
     
 
@@ -48,28 +57,43 @@ def crear():
     data = request.get_json()
     nombre = data.get('nombre')
     descripcion = data.get('descripcion')
-    id_rutina = data.get('id_rutina')
+    nombre_rutina = data.get('nombre_rutina')
 
-    if not descripcion or not nombre:
-        return jsonify({"error":"Debes teclear una descripcion y un nombre"}),400
+    if not nombre or not descripcion:
+        return jsonify({"error": "Debes teclear una descripcion y un nombre"}), 400
     
-    if not id_rutina:
-        return jsonify({"error":"Debes teclear una rutina"}),400
-    
-    # Obtenemos el cursor
+    if not nombre_rutina:
+        return jsonify({"error": "Debes teclear una rutina"}), 400
+
     cursor = get_db_connection()
-
-    # Hacemos el insert
+    
     try:
-        cursor.execute('INSERT INTO ejercicios (nombre, descripcion, id_usuario, id_rutina) values (%s,%s,%s,%s)', 
-                       (nombre,descripcion,current_user,id_rutina))
-        cursor.connection.commit()
-        return jsonify({"message":"ejercicio creado!"}),201
+        
+            # Buscamos el id de la rutina por nombre y usuario
+            cursor.execute('SELECT id_rutina FROM rutinas WHERE nombre=%s AND id_usuario=%s', 
+                           (nombre_rutina, current_user))
+            rutina = cursor.fetchone()
+            
+            if not rutina:
+                return jsonify({"error": "La rutina no existe o no pertenece al usuario"}), 404
+            
+            id_rutina = rutina[0]
+
+            # Insertamos el ejercicio
+            cursor.execute(
+                'INSERT INTO ejercicios (nombre, descripcion, id_usuario, id_rutina) VALUES (%s, %s, %s, %s)',
+                (nombre, descripcion, current_user, id_rutina)
+            )
+            cursor.connection.commit()
+
+            return jsonify({"message": "Ejercicio creado!"}), 201
+
     except Exception as e:
-        return jsonify({"Error":f"No se pudo crear la ejercicio: {str(e)}"})
+        return jsonify({"error": f"No se pudo crear el ejercicio: {str(e)}"}), 500
+
     finally:
-        # Cierro el cursor y la conexion
         cursor.close()
+
 
 
 # Crear endpoint usando PUT y pasando datos por el body y el url
@@ -77,49 +101,58 @@ def crear():
 @jwt_required()
 def modificar(id_ejercicio):
 
-    #Obtener la identidad del dueño del token
+    # Obtener la identidad del dueño del token
     current_user = get_jwt_identity()
 
     # Obtenemos los datos del body
     data = request.get_json()
-
     nombre = data.get('nombre')
     descripcion = data.get('descripcion')
-    id_rutina = data.get('id_rutina')
+    nombre_rutina = data.get('nombre_rutina')
+    
 
     cursor = get_db_connection()
 
-    # Verificamos que la ejercicio exista
+    # Verificamos que el ejercicio exista
     query = "SELECT * FROM ejercicios WHERE id_ejercicio = %s"
     cursor.execute(query, (id_ejercicio,))
     ejercicio = cursor.fetchone()
     
-    # 
     if not ejercicio:
         cursor.close()
-        return jsonify({"error":"Esa ejercicio no existe"}), 404
+        return jsonify({"error":"Ese ejercicio no existe"}), 404
     
-    
-    # Verificamos que la ejercicio pertenezca al usuario
-    if not ejercicio[3] == int(current_user):
+    # Verificamos que el ejercicio pertenezca al usuario
+    if ejercicio[3] != int(current_user):
         cursor.close()
         return jsonify({"error": "Credenciales Incorrectas"}), 401
-    
-    # Actualizamos la ejercicio
+
+    # Obtenemos el id_rutina a partir del nombre_rutina
+    cursor.execute("SELECT id_rutina FROM rutinas WHERE nombre = %s AND id_usuario = %s", 
+                   (nombre_rutina, current_user))
+    rutina = cursor.fetchone()
+
+    if not rutina:
+        cursor.close()
+        return jsonify({"error": "La rutina indicada no existe"}), 404
+
+    id_rutina = rutina[0]
+
+    # Actualizamos el ejercicio
     try:
-        cursor.execute("UPDATE ejercicios SET descripcion = %s WHERE id_ejercicio = %s", 
-                       (descripcion, id_ejercicio))
-        cursor.execute("UPDATE ejercicios SET nombre = %s WHERE id_ejercicio = %s", 
-                       (nombre, id_ejercicio))
-        cursor.execute("UPDATE ejercicios SET id_rutina = %s WHERE id_ejercicio = %s", 
-                       (id_rutina, id_ejercicio))
+        cursor.execute("""
+            UPDATE ejercicios 
+            SET nombre = %s, descripcion = %s, id_rutina = %s
+            WHERE id_ejercicio = %s
+        """, (nombre, descripcion, id_rutina, id_ejercicio))
         
         cursor.connection.commit()
-        return jsonify({"mensaje":"Datos actualizados correctamente"}),200
+        return jsonify({"mensaje":"Datos actualizados correctamente"}), 200
     except Exception as e:
-        return jsonify({"error":f"Error al actualizar los datos: {str(e)}"})
+        return jsonify({"error": f"Error al actualizar los datos: {str(e)}"}), 500
     finally:
         cursor.close()
+
 
 # Crear endpoint usando DELETE y pasando datos por el URL
 @ejercicios_bp.route('/eliminar/<int:id_ejercicio>', methods=['DELETE'])
